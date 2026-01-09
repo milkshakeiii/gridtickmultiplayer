@@ -181,6 +181,62 @@ def on_tick(self, zone_id, entities, intents, tick_number) -> TickResult:
     return TickResult(entity_deletes=deletes, ...)
 ```
 
+### External Game Modules
+
+Game modules can live in a separate repository. Options:
+
+**1. Install as pip package (recommended)**
+
+Your game module repo needs a minimal `pyproject.toml`:
+
+```toml
+[project]
+name = "my-game-module"
+version = "0.1.0"
+dependencies = []
+
+[project.optional-dependencies]
+dev = ["gridtickmultiplayer"]  # For type hints during development
+```
+
+Then install and configure:
+
+```bash
+# Install from git
+pip install git+https://github.com/you/my-game-module.git
+
+# Or install locally for development
+pip install -e /path/to/my-game-module
+
+# Configure in .env
+GAME_MODULE=my_game_module.main
+```
+
+**2. PYTHONPATH**
+
+```bash
+PYTHONPATH=/path/to/my-game-repo:$PYTHONPATH python -m grid_backend.main
+```
+
+**3. Symlink into game_modules/**
+
+```bash
+ln -s /path/to/my-game-repo/my_module grid_backend/game_modules/my_module
+# GAME_MODULE=grid_backend.game_modules.my_module
+```
+
+Your module must export a `game_module` instance implementing the `GameLogicModule` protocol:
+
+```python
+# my_game_module/main.py
+class MyGame:
+    async def on_init(self, framework): ...
+    def on_tick(self, zone_id, entities, intents, tick_number): ...
+    def get_player_state(self, zone_id, player_id, full_state): ...
+
+game_module = MyGame()
+```
+
 ## Project Structure
 
 ```
