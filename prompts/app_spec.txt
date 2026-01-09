@@ -1,0 +1,447 @@
+<project_specification>
+  <project_name>Grid Backend</project_name>
+
+  <overview>
+    A minimal, generic Python backend framework for tick-based 2D grid multiplayer games with swappable game logic modules. Designed for "massively" multiplayer persistent worlds with a 1-second tick rate, inspired by EVE Online's authoritative server architecture. The framework handles infrastructure (auth, connections, persistence, tick loop) while game-specific logic is implemented via pluggable modules conforming to a defined interface.
+  </overview>
+
+  <technology_stack>
+    <frontend>
+      <note>This is a backend-only project. Clients will connect via WebSocket.</note>
+    </frontend>
+    <backend>
+      <language>Python 3.11+</language>
+      <framework>FastAPI</framework>
+      <async>asyncio</async>
+      <websockets>FastAPI WebSocket support</websockets>
+      <database>PostgreSQL</database>
+      <orm>SQLAlchemy (async) or asyncpg</orm>
+    </backend>
+    <communication>
+      <realtime>WebSocket for game state and intents</realtime>
+      <rest>REST endpoints for auth, zone listing, debug tools</rest>
+      <protocol>JSON messages</protocol>
+    </communication>
+  </technology_stack>
+
+  <prerequisites>
+    <environment_setup>
+      - Python 3.11 or higher
+      - PostgreSQL database
+      - Virtual environment (venv or similar)
+      - Dependencies: fastapi, uvicorn, websockets, sqlalchemy, asyncpg, pydantic, passlib (for password hashing)
+    </environment_setup>
+  </prerequisites>
+
+  <feature_count>74</feature_count>
+
+  <architecture_principles>
+    <principle name="Minimal Framework">
+      The framework does as little as possible. All game-specific logic lives in swappable modules.
+    </principle>
+    <principle name="Opaque Intents">
+      Intents are JSON blobs opaque to the framework. Game logic defines, validates, and resolves them.
+    </principle>
+    <principle name="Single Shard">
+      One persistent world with unique zones. No instancing.
+    </principle>
+    <principle name="One Ruleset Per Instance">
+      Each running server instance loads exactly one game logic module.
+    </principle>
+    <principle name="Authoritative Server">
+      Server is the source of truth. No client prediction needed due to slow tick rate.
+    </principle>
+  </architecture_principles>
+
+  <security_and_access_control>
+    <user_roles>
+      <role name="player">
+        <permissions>
+          - Can register and login
+          - Can connect via WebSocket
+          - Can subscribe to one zone at a time
+          - Can submit intents
+          - Can receive tick state updates
+        </permissions>
+      </role>
+      <role name="debug">
+        <permissions>
+          - All player permissions
+          - Can pause/resume tick engine
+          - Can inspect zone state
+          - Can inspect entity state
+          - Can view connected players
+        </permissions>
+        <note>Debug access is for development only, controlled via config/environment</note>
+      </role>
+    </user_roles>
+    <authentication>
+      <method>Username/password with session tokens</method>
+      <session_timeout>Configurable, default none (persistent until logout)</session_timeout>
+      <password_requirements>Minimum 8 characters (configurable)</password_requirements>
+    </authentication>
+  </security_and_access_control>
+
+  <core_features>
+    <auth_and_accounts>
+      - Player registration with username and password
+      - Password hashing (bcrypt or argon2)
+      - Player login returning session token
+      - Player logout invalidating session
+      - Session validation for WebSocket connections
+      - Session validation for REST endpoints
+      - Duplicate username prevention
+      - Invalid credentials handling
+    </auth_and_accounts>
+
+    <player_connections>
+      - WebSocket connection establishment
+      - Session token authentication on connect
+      - Connection state tracking (connected players)
+      - Graceful disconnect handling
+      - Reconnection support (same session)
+      - Connection timeout handling
+    </player_connections>
+
+    <zone_management>
+      - Create zone with name and grid dimensions (width x height)
+      - List all zones
+      - Get zone details (dimensions, metadata)
+      - Delete zone (and associated entities)
+      - Zone metadata storage (arbitrary JSON for game logic)
+      - Unique zone names/identifiers
+      - Zone existence validation
+      - Grid coordinate validation (within zone bounds)
+    </zone_management>
+
+    <entity_registry>
+      - Create entity with UUID, position (x, y), dimensions (width x height)
+      - Support 0x0 dimension entities (equipment, markers, invisible objects)
+      - Assign entity to zone
+      - Update entity position
+      - Update entity dimensions
+      - Delete entity
+      - Query all entities in a zone
+      - Query entities by position/area
+      - Entity metadata storage (arbitrary JSON for game logic)
+      - Rectangular overlap detection (for entities with size > 0)
+    </entity_registry>
+
+    <tick_engine>
+      - Configurable tick rate (default 1 second)
+      - Continuous tick loop running async
+      - Tick counter/timestamp
+      - Per-zone tick processing
+      - Error isolation (one zone's error doesn't crash others)
+      - Tick timing accuracy tracking
+      - Start tick engine on server start
+      - Stop tick engine on server shutdown
+    </tick_engine>
+
+    <intent_system>
+      - Receive intent via WebSocket (opaque JSON blob)
+      - Associate intent with player and zone
+      - Queue intents per zone per tick
+      - Pass intent queue to game logic on tick
+      - Clear intent queue after tick processing
+      - Intent timestamp/ordering preservation
+    </intent_system>
+
+    <game_logic_interface>
+      - Define Python protocol/interface for game modules
+      - Load game logic module at startup via config
+      - Call module on_tick(zone, entities, intents) each tick
+      - Receive state changes from module
+      - Apply entity creates/updates/deletes from module
+      - Handle module exceptions gracefully
+      - Module access to entity metadata
+      - Module can specify per-player state visibility
+    </game_logic_interface>
+
+    <state_broadcasting>
+      - Player subscribes to zone via WebSocket message
+      - Player can only subscribe to one zone at a time
+      - Switching zones unsubscribes from previous
+      - Broadcast zone state to subscribers after each tick
+      - State format determined by game logic module
+      - Handle slow/disconnected clients (don't block tick)
+    </state_broadcasting>
+
+    <debug_tools>
+      - Pause tick engine (debug mode only)
+      - Resume tick engine
+      - Inspect current zone state (entities, metadata)
+      - Inspect specific entity state
+      - View list of connected players and their zones
+      - Manual tick trigger (when paused)
+    </debug_tools>
+
+    <database_persistence>
+      - Database schema initialization
+      - Save zone state to database
+      - Load zone state from database on startup
+      - Save entity state to database
+      - Periodic entity state persistence (configurable interval)
+      - Transaction handling for consistency
+      - Connection pooling
+      - Handle database connection failures gracefully
+    </database_persistence>
+  </core_features>
+
+  <database_schema>
+    <tables>
+      <players>
+        - id (UUID, primary key)
+        - username (unique, indexed)
+        - password_hash
+        - created_at
+        - last_login
+      </players>
+
+      <sessions>
+        - id (UUID, primary key)
+        - player_id (foreign key)
+        - token (unique, indexed)
+        - created_at
+        - expires_at (nullable)
+      </sessions>
+
+      <zones>
+        - id (UUID, primary key)
+        - name (unique, indexed)
+        - width (integer)
+        - height (integer)
+        - metadata (JSONB)
+        - created_at
+        - updated_at
+      </zones>
+
+      <entities>
+        - id (UUID, primary key)
+        - zone_id (foreign key, indexed)
+        - x (integer)
+        - y (integer)
+        - width (integer, can be 0)
+        - height (integer, can be 0)
+        - metadata (JSONB)
+        - created_at
+        - updated_at
+      </entities>
+    </tables>
+  </database_schema>
+
+  <api_endpoints_summary>
+    <rest_auth>
+      - POST /api/auth/register
+      - POST /api/auth/login
+      - POST /api/auth/logout
+      - GET /api/auth/me (current player info)
+    </rest_auth>
+
+    <rest_zones>
+      - GET /api/zones (list all zones)
+      - GET /api/zones/{zone_id} (zone details)
+      - POST /api/zones (create zone - debug only)
+      - DELETE /api/zones/{zone_id} (delete zone - debug only)
+    </rest_zones>
+
+    <rest_debug>
+      - POST /api/debug/tick/pause
+      - POST /api/debug/tick/resume
+      - POST /api/debug/tick/step (manual tick)
+      - GET /api/debug/zones/{zone_id}/state
+      - GET /api/debug/entities/{entity_id}
+      - GET /api/debug/connections
+    </rest_debug>
+
+    <websocket>
+      - WS /ws (main game connection)
+    </websocket>
+
+    <websocket_messages_client_to_server>
+      - {"type": "subscribe", "zone_id": "..."}
+      - {"type": "intent", "data": {...}} (opaque to framework)
+    </websocket_messages_client_to_server>
+
+    <websocket_messages_server_to_client>
+      - {"type": "subscribed", "zone_id": "..."}
+      - {"type": "tick", "tick_number": N, "state": {...}}
+      - {"type": "error", "message": "..."}
+    </websocket_messages_server_to_client>
+  </api_endpoints_summary>
+
+  <game_logic_module_interface>
+    <description>
+      Game logic modules must implement this Python protocol. The framework loads one module at startup and calls it each tick.
+    </description>
+    <protocol>
+      class GameLogicModule(Protocol):
+          def on_init(self, framework: FrameworkAPI) -> None:
+              """Called once when module is loaded. Use to set up initial state."""
+              ...
+
+          def on_tick(
+              self,
+              zone_id: UUID,
+              entities: list[Entity],
+              intents: list[Intent],
+              tick_number: int
+          ) -> TickResult:
+              """
+              Called each tick for each zone.
+              Returns state changes to apply and state to broadcast.
+              """
+              ...
+
+          def get_player_state(
+              self,
+              zone_id: UUID,
+              player_id: UUID,
+              full_state: dict
+          ) -> dict:
+              """
+              Filter/transform state for a specific player.
+              Allows fog-of-war or player-specific views.
+              """
+              ...
+    </protocol>
+    <tick_result>
+      @dataclass
+      class TickResult:
+          entity_creates: list[EntityCreate]
+          entity_updates: list[EntityUpdate]
+          entity_deletes: list[UUID]
+          broadcast_state: dict  # State to send to clients
+    </tick_result>
+  </game_logic_module_interface>
+
+  <implementation_steps>
+    <step number="1">
+      <title>Project Setup and Database</title>
+      <tasks>
+        - Initialize Python project with FastAPI
+        - Configure PostgreSQL connection with async support
+        - Define SQLAlchemy models for players, sessions, zones, entities
+        - Create database initialization script
+        - Set up configuration management (environment variables)
+      </tasks>
+    </step>
+
+    <step number="2">
+      <title>Authentication System</title>
+      <tasks>
+        - Implement password hashing utilities
+        - Create registration endpoint
+        - Create login endpoint with session token generation
+        - Create logout endpoint
+        - Implement session validation middleware
+        - Add session token validation for REST and WebSocket
+      </tasks>
+    </step>
+
+    <step number="3">
+      <title>Zone and Entity Management</title>
+      <tasks>
+        - Implement zone CRUD operations
+        - Implement entity CRUD operations
+        - Add entity querying by zone and position
+        - Implement rectangular overlap detection
+        - Add metadata storage for zones and entities
+      </tasks>
+    </step>
+
+    <step number="4">
+      <title>WebSocket Connection Handling</title>
+      <tasks>
+        - Set up WebSocket endpoint
+        - Implement connection authentication
+        - Track connected players
+        - Handle disconnect and reconnection
+        - Implement zone subscription system
+      </tasks>
+    </step>
+
+    <step number="5">
+      <title>Tick Engine</title>
+      <tasks>
+        - Implement async tick loop
+        - Add configurable tick rate
+        - Process zones each tick
+        - Track tick timing and number
+        - Implement error isolation per zone
+      </tasks>
+    </step>
+
+    <step number="6">
+      <title>Intent System</title>
+      <tasks>
+        - Receive intents via WebSocket
+        - Queue intents per zone
+        - Pass intents to game logic on tick
+        - Clear queues after processing
+      </tasks>
+    </step>
+
+    <step number="7">
+      <title>Game Logic Module System</title>
+      <tasks>
+        - Define GameLogicModule protocol
+        - Implement module loading from config
+        - Call module on_tick each tick
+        - Apply state changes from module
+        - Handle module exceptions
+      </tasks>
+    </step>
+
+    <step number="8">
+      <title>State Broadcasting</title>
+      <tasks>
+        - Broadcast state to zone subscribers after tick
+        - Support per-player state filtering
+        - Handle slow clients without blocking
+      </tasks>
+    </step>
+
+    <step number="9">
+      <title>Debug Tools</title>
+      <tasks>
+        - Implement tick pause/resume
+        - Add manual tick stepping
+        - Create state inspection endpoints
+        - Add connection listing
+      </tasks>
+    </step>
+
+    <step number="10">
+      <title>Example Game Logic Module</title>
+      <tasks>
+        - Create a simple example module (e.g., basic movement)
+        - Demonstrate the module interface
+        - Document how to create new modules
+      </tasks>
+    </step>
+  </implementation_steps>
+
+  <success_criteria>
+    <functionality>
+      - Players can register, login, and connect via WebSocket
+      - Players can subscribe to zones and receive tick updates
+      - Players can submit intents that reach game logic
+      - Tick engine runs reliably at 1-second intervals
+      - Game logic modules can be swapped via configuration
+      - Entity state persists across server restarts
+    </functionality>
+    <technical_quality>
+      - Clean separation between framework and game logic
+      - Async throughout for scalability
+      - Proper error handling and logging
+      - Database transactions for consistency
+      - Well-defined module interface with type hints
+    </technical_quality>
+    <scalability>
+      - Supports dozens of players per zone
+      - Supports thousands of players across all zones
+      - Zone processing doesn't block other zones
+    </scalability>
+  </success_criteria>
+</project_specification>
