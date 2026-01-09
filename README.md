@@ -33,9 +33,12 @@ Grid Backend is designed for "massively" multiplayer persistent worlds with a 1-
 
 1. **Clone and setup**:
    ```bash
-   git clone <repository-url>
-   cd grid-backend
-   ./init.sh
+   git clone https://github.com/milkshakeiii/gridtickmultiplayer.git
+   cd gridtickmultiplayer
+   python3 -m venv venv
+   source venv/bin/activate
+   pip install -r requirements.txt
+   cp .env.example .env
    ```
 
 2. **Start the server**:
@@ -120,8 +123,8 @@ class TickResult:
     extras: dict  # Non-entity payload (events, notifications)
 
 class GameLogicModule(Protocol):
-    def on_init(self, framework: FrameworkAPI) -> None:
-        """Called once when module is loaded."""
+    async def on_init(self, framework: FrameworkAPI) -> None:
+        """Called once when module is loaded. Use for setup (e.g., create zones)."""
         ...
 
     def on_tick(
@@ -146,10 +149,42 @@ class GameLogicModule(Protocol):
 
 The framework builds the authoritative entity snapshot after applying deltas, then calls `get_player_state` for each subscriber to apply fog-of-war/redaction.
 
+### Entity Ownership
+
+Entities can have an `owner_id` linking them to a player. When creating entities via `EntityCreate`, set the `owner_id` field:
+
+```python
+EntityCreate(
+    x=10, y=10,
+    owner_id=intent.player_id,  # Link to creating player
+    metadata={"char": "@"}
+)
+```
+
+When a player disconnects, the framework automatically queues a synthetic `owner_disconnect` intent:
+
+```python
+{"action": "owner_disconnect", "player_id": "..."}
+```
+
+Game modules should handle this intent to clean up player-owned entities:
+
+```python
+def on_tick(self, zone_id, entities, intents, tick_number) -> TickResult:
+    deletes = []
+    for intent in intents:
+        if intent.data.get("action") == "owner_disconnect":
+            player_id = UUID(intent.data["player_id"])
+            for entity in entities:
+                if entity.owner_id == player_id:
+                    deletes.append(entity.id)
+    return TickResult(entity_deletes=deletes, ...)
+```
+
 ## Project Structure
 
 ```
-grid-backend/
+gridtickmultiplayer/
 ├── grid_backend/
 │   ├── __init__.py
 │   ├── main.py              # FastAPI application entry
@@ -181,7 +216,7 @@ grid-backend/
 │       ├── __init__.py
 │       └── example.py
 ├── tests/                   # Test suite
-├── alembic/                 # Database migrations
+├── .env.example             # Example configuration
 ├── init.sh                  # Setup script
 ├── run.sh                   # Run script
 ├── requirements.txt         # Python dependencies
@@ -213,7 +248,9 @@ Debug access is for development only and controlled via config/environment.
 - **players**: id, username, password_hash, created_at, last_login
 - **sessions**: id, player_id, token, created_at, expires_at
 - **zones**: id, name, width, height, metadata, created_at, updated_at
-- **entities**: id, zone_id, x, y, width, height, metadata, created_at, updated_at
+- **entities**: id, zone_id, owner_id, x, y, width, height, metadata, created_at, updated_at
+
+The `owner_id` field links entities to their owning player, enabling automatic cleanup when players disconnect.
 
 ## Development
 
