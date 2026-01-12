@@ -39,6 +39,8 @@ class EntityUpdate:
     """
     Describes updates to an existing entity.
     Only non-None fields will be updated.
+
+    Set zone_id to transfer an entity to a different zone.
     """
 
     id: UUID
@@ -47,6 +49,7 @@ class EntityUpdate:
     width: int | None = None
     height: int | None = None
     metadata: dict[str, Any] | None = None
+    zone_id: UUID | None = None  # Set to transfer entity to another zone
 
 
 @dataclass
@@ -151,7 +154,6 @@ class FrameworkAPI:
             )
             await db.commit()
             return result.rowcount > 0
-
 
 @runtime_checkable
 class GameLogicModule(Protocol):

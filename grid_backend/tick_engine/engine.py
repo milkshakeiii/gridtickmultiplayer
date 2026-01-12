@@ -296,6 +296,8 @@ class TickEngine:
             new_entities.append(entity)
 
         # Update existing entities
+        zone_transferred_ids: set[UUID] = set()
+
         for update in result.entity_updates:
             for entity in zone.entities:
                 if entity.id == update.id:
@@ -309,6 +311,9 @@ class TickEngine:
                         entity.height = update.height
                     if update.metadata is not None:
                         entity.metadata_ = update.metadata
+                    if update.zone_id is not None:
+                        entity.zone_id = update.zone_id
+                        zone_transferred_ids.add(entity.id)
                     break
 
         # Delete entities
@@ -321,10 +326,11 @@ class TickEngine:
         await db.commit()
 
         # Update in-memory entity list for same-tick correctness
-        # Remove deleted entities and add new ones
-        if deleted_ids or new_entities:
-            # Filter out deleted entities
-            remaining = [e for e in zone.entities if e.id not in deleted_ids]
+        # Remove deleted and zone-transferred entities, add new ones
+        if deleted_ids or new_entities or zone_transferred_ids:
+            # Filter out deleted and zone-transferred entities
+            removed_ids = deleted_ids | zone_transferred_ids
+            remaining = [e for e in zone.entities if e.id not in removed_ids]
             # Add new entities
             remaining.extend(new_entities)
             # SQLAlchemy collections need careful handling - replace contents
